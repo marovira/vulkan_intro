@@ -1,0 +1,24 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 24,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "msvc",
+            "displayName": "MSVC",
+            "description": "Default build for MSVC",
+            "generator": "Visual Studio 17 2022",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables":{
+                "VULKAN_INTRO_PRESET": "ON",
+                "CMAKE_CXX_FLAGS": "/W4 /WX /MP /EHsc",
+                "CMAKE_CXX_FLAGS_DEBUG": "/ZI",
+                "CMAKE_CXX_STANDARD": "20",
+                "ZEUS_BUILD_TESTS": "OFF"
+            }
+        }
+    ]
+}
