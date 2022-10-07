@@ -5,10 +5,16 @@ set(PCH ${VULKAN_INTRO_SOURCE_ROOT}/pch.hpp)
 set(SOURCE_LIST
     ${VULKAN_INTRO_SOURCE_ROOT}/main.cpp
     ${VULKAN_INTRO_SOURCE_ROOT}/assert.cpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_app.cpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_engine.cpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vk_initialisers.cpp
     )
 
 set(INCLUDE_LIST
     ${PCH}
+    ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_app.hpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_engine.hpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vk_initialisers.hpp
     )
 
 source_group("source" FILES ${SOURCE_LIST})

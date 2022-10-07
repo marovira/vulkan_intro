@@ -19,7 +19,6 @@
 #include <magic_enum.hpp>
 #include <vk_mem_alloc.h>
 #include <VkBootstrap.h>
-#include <zeus/assert.hpp>
 #include <zeus/enum_bitfield.hpp>
 
 #include <GLFW/glfw3.h>
