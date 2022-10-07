@@ -1,12 +1,14 @@
 # Introduction to Vulkan
 
 The goal here is to help me wrap my head around Vulkan so I can start building more
-advanced rendering engines. The code here shouldn't be made public!
+advanced rendering engines.
 
 ## Reference
 
 The code here is mainly taken from the [Vulkan Guide](https://vkguide.dev/), though it may
-incorporate more things from other places as I progress.
+incorporate more things from other places as I progress. The code is adapted to use
+Vulkan-HPP instead of the C-API for the sake of simplicity (and since we're going to be
+using C++ anyway).
 
 ## Dependencies
 
