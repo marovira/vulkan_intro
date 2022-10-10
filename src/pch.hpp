@@ -13,7 +13,7 @@
 // 2. Disable setters so only direct assignment is available.
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_NO_SETTERS
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 
 #include <fmt/printf.h>
 #include <magic_enum.hpp>

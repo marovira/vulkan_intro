@@ -15,20 +15,11 @@ namespace vk_initialisers
                        });
     }
 
-    template<typename T, typename U>
-    T* to_vk_ptr(U* type)
-    {
-        return reinterpret_cast<T*>(type);
-    }
-
-    vk::UniqueInstance make_unique_instance(vk::Instance const& instance);
-    vk::UniqueDevice make_unique_device(vk::Device const& device);
-
     vk::CommandPoolCreateInfo
     command_pool_create_info(std::uint32_t queue_family_index,
                              vk::CommandPoolCreateFlags flags = {});
     vk::CommandBufferAllocateInfo command_buffer_allocate_info(
-        vk::CommandPool const& pool,
+        vk::raii::CommandPool const& pool,
         std::uint32_t count    = 1,
         vk::CommandBufferLevel = vk::CommandBufferLevel::ePrimary);
 } // namespace vk_initialisers

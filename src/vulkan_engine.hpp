@@ -18,22 +18,27 @@ public:
 private:
     struct Swapchain
     {
-        vk::UniqueSwapchainKHR handle;
+        using UniqueImageView = std::unique_ptr<vk::raii::ImageView>;
+
+        std::unique_ptr<vk::raii::SwapchainKHR> handle;
         vk::Format format;
         std::vector<vk::Image> images;
-        std::vector<vk::UniqueImageView> image_views;
+        std::vector<UniqueImageView> image_views;
     };
 
-    struct GraphicsQueue
+    struct Queue
     {
+        // Queues are similar to physical devices in that they're not
+        // really resources tied to anything, so we're going to keep it out
+        // of the RAII namespace.
         vk::Queue queue;
         std::uint32_t family_index{0};
     };
 
     struct CommandPool
     {
-        vk::UniqueCommandPool pool;
-        vk::CommandBuffer command_buffer;
+        std::unique_ptr<vk::raii::CommandPool> pool;
+        vk::raii::CommandBuffers command_buffers{nullptr};
     };
 
     void init_vulkan();
@@ -47,22 +52,24 @@ private:
     SurfaceCallback m_surface_callback;
     vk::Extent2D m_window_extent;
 
-    vk::UniqueInstance m_instance;
-    vk::DebugUtilsMessengerEXT m_debug_messenger;
-    vk::UniqueSurfaceKHR m_surface;
+    std::unique_ptr<vk::raii::Context> m_context;
+    std::unique_ptr<vk::raii::Instance> m_instance;
 
-    vk::UniqueDevice m_device;
+    std::unique_ptr<vk::raii::DebugUtilsMessengerEXT> m_debug_messenger;
+    std::unique_ptr<vk::raii::SurfaceKHR> m_surface;
+
+    std::unique_ptr<vk::raii::Device> m_device;
     vk::PhysicalDevice m_chosen_gpu;
 
     Swapchain m_swapchain;
-    GraphicsQueue m_graphics_queue;
+    Queue m_graphics_queue;
     CommandPool m_command_pool;
 
-    vk::UniqueRenderPass m_render_pass;
+    std::unique_ptr<vk::raii::RenderPass> m_render_pass;
 
-    std::vector<vk::UniqueFramebuffer> m_framebuffers;
+    std::vector<vk::raii::Framebuffer> m_framebuffers;
 
-    vk::UniqueSemaphore m_present_semaphore;
-    vk::UniqueSemaphore m_render_semaphore;
-    vk::UniqueFence m_render_fence;
+    std::unique_ptr<vk::raii::Semaphore> m_present_semaphore;
+    std::unique_ptr<vk::raii::Semaphore> m_render_semaphore;
+    std::unique_ptr<vk::raii::Fence> m_render_fence;
 };

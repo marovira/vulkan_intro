@@ -3,6 +3,13 @@
 
 #include <zeus/assert.hpp>
 
+// Convert from a pointer to a vk::raii object to the corresponding vk:: object.
+template<typename T>
+auto to_vk_type(T const& ptr)
+{
+    return *(*ptr);
+}
+
 VKAPI_ATTR VkBool32 VKAPI_CALL
 debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
                VkDebugUtilsMessageTypeFlagsEXT type,
@@ -24,11 +31,7 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 VulkanEngine::~VulkanEngine()
 {
     [[maybe_unused]] auto val =
-        m_device->waitForFences({*m_render_fence}, true, 1000000000);
-
-    // Everything is handled through the pointer handles, so the only thing we need to
-    // delete manually is the debug messenger.
-    vkb::destroy_debug_utils_messenger(*m_instance, m_debug_messenger);
+        m_device->waitForFences({to_vk_type(m_render_fence)}, true, 1000000000);
 }
 
 void VulkanEngine::set_surface_callback(SurfaceCallback&& callback)
@@ -53,19 +56,22 @@ void VulkanEngine::init()
 
 void VulkanEngine::render()
 {
-    auto val = m_device->waitForFences({*m_render_fence}, true, 1000000000);
-    m_device->resetFences({*m_render_fence});
+    // Global variable to dump the results in. Note that since we have Vulkan configured
+    // to throw exceptions, checking the result is not really necessary (we're guaranteed
+    // that it will work).
+    vk::Result result;
 
-    auto swapchain_image_idx = m_device
-                                   ->acquireNextImageKHR(*m_swapchain.handle,
-                                                         1000000000,
-                                                         *m_present_semaphore,
-                                                         nullptr)
-                                   .value;
+    result = m_device->waitForFences({to_vk_type(m_render_fence)}, true, 1000000000);
+    m_device->resetFences({to_vk_type(m_render_fence)});
 
-    m_command_pool.command_buffer.reset();
+    std::uint32_t swapchain_image_idx;
+    std::tie(result, swapchain_image_idx) =
+        m_swapchain.handle->acquireNextImage(1000000000, to_vk_type(m_present_semaphore));
 
-    auto& cmd = m_command_pool.command_buffer;
+    // Grab the command buffer so we can use it directly.
+    auto const& cmd = m_command_pool.command_buffers.front();
+
+    cmd.reset();
 
     vk::CommandBufferBeginInfo cmd_begin_info{
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
@@ -75,7 +81,7 @@ void VulkanEngine::render()
     vk::ClearValue colour_clear{.color = {std::array{0.0f, 0.0f, flash, 1.0f}}};
 
     vk::RenderPassBeginInfo rp_info{
-        .renderPass  = *m_render_pass,
+        .renderPass  = to_vk_type(m_render_pass),
         .framebuffer = *m_framebuffers[swapchain_image_idx],
         .renderArea = vk::Rect2D{.offset = vk::Offset2D{0, 0}, .extent = m_window_extent},
         .clearValueCount = 1,
@@ -87,29 +93,36 @@ void VulkanEngine::render()
     cmd.endRenderPass();
     cmd.end();
 
+    // We're going to need the address of several vk:: objects, so grab them here.
+    auto present_semaphore = to_vk_type(m_present_semaphore);
+    auto render_semaphore  = to_vk_type(m_render_semaphore);
+    auto swapchain         = to_vk_type(m_swapchain.handle);
+
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     vk::SubmitInfo submit{.waitSemaphoreCount   = 1,
-                          .pWaitSemaphores      = &(*m_present_semaphore),
+                          .pWaitSemaphores      = &present_semaphore,
                           .pWaitDstStageMask    = &wait_stage,
                           .commandBufferCount   = 1,
-                          .pCommandBuffers      = &cmd,
+                          .pCommandBuffers      = &(*cmd),
                           .signalSemaphoreCount = 1,
-                          .pSignalSemaphores    = &(*m_render_semaphore)};
+                          .pSignalSemaphores    = &render_semaphore};
 
-    m_graphics_queue.queue.submit(submit, *m_render_fence);
+    m_graphics_queue.queue.submit({submit}, to_vk_type(m_render_fence));
 
     vk::PresentInfoKHR present_info{.waitSemaphoreCount = 1,
-                                    .pWaitSemaphores    = &(*m_render_semaphore),
+                                    .pWaitSemaphores    = &render_semaphore,
                                     .swapchainCount     = 1,
-                                    .pSwapchains        = &(*m_swapchain.handle),
+                                    .pSwapchains        = &swapchain,
                                     .pImageIndices      = &swapchain_image_idx};
 
-    val = m_graphics_queue.queue.presentKHR(present_info);
+    result = m_graphics_queue.queue.presentKHR(present_info);
     ++m_frame_number;
 }
 
 void VulkanEngine::init_vulkan()
 {
+    m_context = std::make_unique<vk::raii::Context>();
+
     vkb::InstanceBuilder builder;
     auto inst_ret = builder.set_app_name("Vulkan App")
                         .request_validation_layers(true)
@@ -119,20 +132,38 @@ void VulkanEngine::init_vulkan()
 
     vkb::Instance vkb_inst = inst_ret.value();
 
-    m_instance        = vk_initialisers::make_unique_instance(vkb_inst.instance);
-    m_debug_messenger = vkb_inst.debug_messenger;
+    m_instance = std::make_unique<vk::raii::Instance>(*m_context, vkb_inst.instance);
+    m_debug_messenger =
+        std::make_unique<vk::raii::DebugUtilsMessengerEXT>(*m_instance,
+                                                           vkb_inst.debug_messenger);
 
-    m_surface = vk::UniqueSurfaceKHR{m_surface_callback(*m_instance), *m_instance};
+    // Grab the instance itself from the wrapper so we can create the surface.
+    auto instance = to_vk_type(m_instance);
+
+    m_surface =
+        std::make_unique<vk::raii::SurfaceKHR>(*m_instance, m_surface_callback(instance));
 
     vkb::PhysicalDeviceSelector selector{vkb_inst};
-    vkb::PhysicalDevice physical_device =
-        selector.set_minimum_version(1, 3).set_surface(*m_surface).select().value();
+    vkb::PhysicalDevice physical_device = selector.set_minimum_version(1, 3)
+                                              .set_surface(to_vk_type(m_surface))
+                                              .select()
+                                              .value();
 
     vkb::DeviceBuilder device_builder{physical_device};
     vkb::Device vkb_device = device_builder.build().value();
 
-    // Physical devices aren't a resource, so they don't have to be kept in pointers.
-    m_device     = vk_initialisers::make_unique_device(vkb_device.device);
+    // This is a bit... awkward, but here goes: in order to create a device, we first need
+    // the physical device that it will reference (devices are after all logical
+    // references to physical devices). So we need to make a RAII physical device in order
+    // to create the actual device... BUT! note that this will get destroyed as soon as we
+    // exit the function, which is fine because physical devices are not real resources,
+    // so this temporary is irrelevant.
+    vk::raii::PhysicalDevice phyisical_device{*m_instance, vkb_device.physical_device};
+
+    // Now create the actual device.
+    m_device = std::make_unique<vk::raii::Device>(phyisical_device, vkb_device.device);
+
+    // Keep a copy of the physical device in the class itself.
     m_chosen_gpu = vkb_device.physical_device;
 
     m_graphics_queue.queue = vkb_device.get_queue(vkb::QueueType::graphics).value();
@@ -142,7 +173,9 @@ void VulkanEngine::init_vulkan()
 
 void VulkanEngine::init_swapchain()
 {
-    vkb::SwapchainBuilder swapchain_builder{m_chosen_gpu, *m_device, *m_surface};
+    vkb::SwapchainBuilder swapchain_builder{m_chosen_gpu,
+                                            to_vk_type(m_device),
+                                            to_vk_type(m_surface)};
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
@@ -153,7 +186,8 @@ void VulkanEngine::init_swapchain()
 
     // Note that the swapchain is owned by the device, so by creating it like this we
     // guarantee that it will be destroyed before the device.
-    m_swapchain.handle = vk::UniqueSwapchainKHR{vkb_swapchain.swapchain, *m_device};
+    m_swapchain.handle =
+        std::make_unique<vk::raii::SwapchainKHR>(*m_device, vkb_swapchain.swapchain);
 
     // Images are owned by the swapchain, so these get destroyed upon its destruction.
     vk_initialisers::to_vk_vector(vkb_swapchain.get_images().value(),
@@ -163,11 +197,12 @@ void VulkanEngine::init_swapchain()
                                   });
 
     // Views on the other hand are owned by the device, so make sure they're tied to it.
-    vk_initialisers::to_vk_vector(vkb_swapchain.get_image_views().value(),
-                                  m_swapchain.image_views,
-                                  [this](VkImageView view) {
-                                      return vk::UniqueImageView{view, *m_device};
-                                  });
+    vk_initialisers::to_vk_vector(
+        vkb_swapchain.get_image_views().value(),
+        m_swapchain.image_views,
+        [this](VkImageView view) {
+            return std::make_unique<vk::raii::ImageView>(*m_device, view);
+        });
 
     m_swapchain.format = vk::Format{vkb_swapchain.image_format};
 }
@@ -176,23 +211,19 @@ void VulkanEngine::init_commands()
 {
     using namespace vk_initialisers;
 
-    m_command_pool.pool = m_device->createCommandPoolUnique(
-        command_pool_create_info(m_graphics_queue.family_index,
-                                 vk::CommandPoolCreateFlagBits::eResetCommandBuffer));
+    {
+        auto info =
+            command_pool_create_info(m_graphics_queue.family_index,
+                                     vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+        m_command_pool.pool = std::make_unique<vk::raii::CommandPool>(*m_device, info);
+    }
 
-    vk::CommandBufferAllocateInfo cmd_alloc_info{.commandPool = *m_command_pool.pool,
-                                                 .level =
-                                                     vk::CommandBufferLevel::ePrimary,
-
-                                                 .commandBufferCount = 1};
-
-    m_command_pool.command_buffer =
-        m_device
-            ->allocateCommandBuffers(
-                command_buffer_allocate_info(*m_command_pool.pool,
-                                             1,
-                                             vk::CommandBufferLevel::ePrimary))
-            .front();
+    {
+        auto info = command_buffer_allocate_info(*m_command_pool.pool,
+                                                 1,
+                                                 vk::CommandBufferLevel::ePrimary);
+        m_command_pool.command_buffers = vk::raii::CommandBuffers{*m_device, info};
+    }
 }
 
 void VulkanEngine::init_default_render_pass()
@@ -220,32 +251,35 @@ void VulkanEngine::init_default_render_pass()
                                               .subpassCount    = 1,
                                               .pSubpasses      = &subpass};
 
-    m_render_pass = m_device->createRenderPassUnique(render_pass_info);
+    m_render_pass = std::make_unique<vk::raii::RenderPass>(*m_device, render_pass_info);
 }
 
 void VulkanEngine::init_framebuffers()
 {
-    vk::FramebufferCreateInfo fb_info{.renderPass      = *m_render_pass,
-                                      .attachmentCount = 1,
-                                      .width           = m_window_extent.width,
-                                      .height          = m_window_extent.height,
-                                      .layers          = 1};
-
-    m_framebuffers.resize(m_swapchain.images.size());
-    for (int i{0}; auto& framebuffer : m_framebuffers)
+    auto render_pass     = to_vk_type(m_render_pass);
+    auto [width, height] = m_window_extent;
+    std::array<vk::ImageView, 1> attachments;
+    for (auto const& img_view : m_swapchain.image_views)
     {
-        fb_info.pAttachments = &(*m_swapchain.image_views[i]);
-        framebuffer          = m_device->createFramebufferUnique(fb_info);
-        ++i;
+        attachments[0] = to_vk_type(img_view);
+        vk::FramebufferCreateInfo fb_info{.renderPass      = render_pass,
+                                          .attachmentCount = 1,
+                                          .pAttachments    = attachments.data(),
+                                          .width           = width,
+                                          .height          = height,
+                                          .layers          = 1};
+
+        m_framebuffers.emplace_back(*m_device, fb_info);
     }
 }
 
 void VulkanEngine::init_sync_structures()
 {
     vk::FenceCreateInfo fence_create_info{.flags = vk::FenceCreateFlagBits::eSignaled};
-    m_render_fence = m_device->createFenceUnique(fence_create_info);
+    m_render_fence = std::make_unique<vk::raii::Fence>(*m_device, fence_create_info);
 
     vk::SemaphoreCreateInfo semaphore_info;
-    m_present_semaphore = m_device->createSemaphoreUnique(semaphore_info);
-    m_render_semaphore  = m_device->createSemaphoreUnique(semaphore_info);
+    m_present_semaphore =
+        std::make_unique<vk::raii::Semaphore>(*m_device, semaphore_info);
+    m_render_semaphore = std::make_unique<vk::raii::Semaphore>(*m_device, semaphore_info);
 }
