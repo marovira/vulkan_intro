@@ -2,6 +2,22 @@
 
 using SurfaceCallback = std::function<VkSurfaceKHR(vk::Instance const&)>;
 
+struct PipelineBuilder
+{
+    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
+    vk::PipelineVertexInputStateCreateInfo vertex_input_info;
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly;
+    vk::Viewport viewport;
+    vk::Rect2D scissor;
+    vk::PipelineRasterizationStateCreateInfo rasterizer;
+    vk::PipelineColorBlendAttachmentState colour_blend_attachment;
+    vk::PipelineMultisampleStateCreateInfo multisampling;
+    vk::PipelineLayout pipeline_layout;
+
+    vk::raii::Pipeline build_pipeline(vk::raii::Device const& device,
+                                      vk::RenderPass pass);
+};
+
 class VulkanEngine
 {
 public:
@@ -41,12 +57,17 @@ private:
         vk::raii::CommandBuffers command_buffers{nullptr};
     };
 
+    using UniqueShaderModule = std::unique_ptr<vk::raii::ShaderModule>;
+
     void init_vulkan();
     void init_swapchain();
     void init_commands();
     void init_default_render_pass();
     void init_framebuffers();
     void init_sync_structures();
+    void init_pipelines();
+
+    UniqueShaderModule load_shader_module(std::filesystem::path const& path);
 
     int m_frame_number{0};
     SurfaceCallback m_surface_callback;
@@ -72,4 +93,7 @@ private:
     std::unique_ptr<vk::raii::Semaphore> m_present_semaphore;
     std::unique_ptr<vk::raii::Semaphore> m_render_semaphore;
     std::unique_ptr<vk::raii::Fence> m_render_fence;
+
+    std::unique_ptr<vk::raii::PipelineLayout> m_triangle_pipeline_layout;
+    std::unique_ptr<vk::raii::Pipeline> m_triangle_pipeline;
 };

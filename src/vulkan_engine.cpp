@@ -28,6 +28,40 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     return 0;
 }
 
+vk::raii::Pipeline PipelineBuilder::build_pipeline(vk::raii::Device const& device,
+                                                   vk::RenderPass pass)
+{
+    vk::PipelineViewportStateCreateInfo viewport_state{.viewportCount = 1,
+                                                       .pViewports    = &viewport,
+                                                       .scissorCount  = 1,
+                                                       .pScissors     = &scissor};
+
+    vk::PipelineColorBlendStateCreateInfo colour_blending{.logicOpEnable = VK_FALSE,
+                                                          .logicOp = vk::LogicOp::eCopy,
+                                                          .attachmentCount = 1,
+                                                          .pAttachments =
+                                                              &colour_blend_attachment};
+
+    vk::GraphicsPipelineCreateInfo pipeline_info{
+        .stageCount          = static_cast<std::uint32_t>(shader_stages.size()),
+        .pStages             = shader_stages.data(),
+        .pVertexInputState   = &vertex_input_info,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState      = &viewport_state,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState   = &multisampling,
+        .pColorBlendState    = &colour_blending,
+        .layout              = pipeline_layout,
+        .renderPass          = pass,
+        .subpass             = 0,
+        .basePipelineHandle  = VK_NULL_HANDLE};
+
+    vk::PipelineCacheCreateInfo cache_info = {};
+
+    vk::raii::PipelineCache cache{device, cache_info};
+    return vk::raii::Pipeline{device, cache, pipeline_info};
+}
+
 VulkanEngine::~VulkanEngine()
 {
     [[maybe_unused]] auto val =
@@ -52,6 +86,7 @@ void VulkanEngine::init()
     init_default_render_pass();
     init_framebuffers();
     init_sync_structures();
+    init_pipelines();
 }
 
 void VulkanEngine::render()
@@ -89,6 +124,9 @@ void VulkanEngine::render()
     };
 
     cmd.beginRenderPass(rp_info, vk::SubpassContents::eInline);
+
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, to_vk_type(m_triangle_pipeline));
+    cmd.draw(3, 1, 0, 0);
 
     cmd.endRenderPass();
     cmd.end();
@@ -282,4 +320,74 @@ void VulkanEngine::init_sync_structures()
     m_present_semaphore =
         std::make_unique<vk::raii::Semaphore>(*m_device, semaphore_info);
     m_render_semaphore = std::make_unique<vk::raii::Semaphore>(*m_device, semaphore_info);
+}
+
+void VulkanEngine::init_pipelines()
+{
+    namespace fs = std::filesystem;
+    using namespace vk_initialisers;
+
+    auto shader_root = fs::current_path() / "spv";
+    auto vert_module = load_shader_module(shader_root / "triangle.vert.spv");
+    auto frag_module = load_shader_module(shader_root / "triangle.frag.spv");
+
+    auto pipeline_layout_info = pipeline_layout_create_info();
+    m_triangle_pipeline_layout =
+        std::make_unique<vk::raii::PipelineLayout>(*m_device, pipeline_layout_info);
+
+    PipelineBuilder pipeline_builder;
+
+    pipeline_builder.shader_stages.push_back(
+        pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex,
+                                          *vert_module));
+
+    pipeline_builder.shader_stages.push_back(
+        pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment,
+                                          *frag_module));
+
+    pipeline_builder.vertex_input_info = vertex_input_state_create_info();
+    pipeline_builder.input_assembly =
+        input_assembly_create_info(vk::PrimitiveTopology::eTriangleList);
+
+    pipeline_builder.viewport.x        = 0.0f;
+    pipeline_builder.viewport.y        = 0.0f;
+    pipeline_builder.viewport.width    = static_cast<float>(m_window_extent.width);
+    pipeline_builder.viewport.height   = static_cast<float>(m_window_extent.height);
+    pipeline_builder.viewport.minDepth = 0.0f;
+    pipeline_builder.viewport.maxDepth = 1.0f;
+
+    pipeline_builder.scissor.offset = vk::Offset2D{0, 0};
+    pipeline_builder.scissor.extent = m_window_extent;
+
+    pipeline_builder.rasterizer = rasterization_create_info(vk::PolygonMode::eFill);
+
+    pipeline_builder.multisampling           = multisampling_state_create_info();
+    pipeline_builder.colour_blend_attachment = colour_blend_attachment_state();
+    pipeline_builder.pipeline_layout         = to_vk_type(m_triangle_pipeline_layout);
+
+    m_triangle_pipeline = std::make_unique<vk::raii::Pipeline>(
+        pipeline_builder.build_pipeline(*m_device, to_vk_type(m_render_pass)));
+}
+
+VulkanEngine::UniqueShaderModule
+VulkanEngine::load_shader_module(std::filesystem::path const& path)
+{
+    std::ifstream stream{path, std::ios::ate | std::ios::binary};
+    if (!stream.is_open())
+    {
+        return {};
+    }
+
+    std::size_t file_size = stream.tellg();
+    std::vector<std::uint32_t> buffer(file_size / sizeof(std::uint32_t));
+    stream.seekg(0);
+
+    stream.read((char*)buffer.data(), file_size);
+    stream.close();
+
+    vk::ShaderModuleCreateInfo create_info{.codeSize =
+                                               buffer.size() * sizeof(std::uint32_t),
+                                           .pCode = buffer.data()};
+
+    return std::make_unique<vk::raii::ShaderModule>(*m_device, create_info);
 }
