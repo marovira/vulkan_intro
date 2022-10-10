@@ -39,6 +39,9 @@ private:
     void init_vulkan();
     void init_swapchain();
     void init_commands();
+    void init_default_render_pass();
+    void init_framebuffers();
+    void init_sync_structures();
 
     int m_frame_number{0};
     SurfaceCallback m_surface_callback;
@@ -54,4 +57,12 @@ private:
     Swapchain m_swapchain;
     GraphicsQueue m_graphics_queue;
     CommandPool m_command_pool;
+
+    vk::UniqueRenderPass m_render_pass;
+
+    std::vector<vk::UniqueFramebuffer> m_framebuffers;
+
+    vk::UniqueSemaphore m_present_semaphore;
+    vk::UniqueSemaphore m_render_semaphore;
+    vk::UniqueFence m_render_fence;
 };

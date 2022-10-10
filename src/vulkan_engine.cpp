@@ -23,6 +23,9 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 
 VulkanEngine::~VulkanEngine()
 {
+    [[maybe_unused]] auto val =
+        m_device->waitForFences({*m_render_fence}, true, 1000000000);
+
     // Everything is handled through the pointer handles, so the only thing we need to
     // delete manually is the debug messenger.
     vkb::destroy_debug_utils_messenger(*m_instance, m_debug_messenger);
@@ -43,10 +46,67 @@ void VulkanEngine::init()
     init_vulkan();
     init_swapchain();
     init_commands();
+    init_default_render_pass();
+    init_framebuffers();
+    init_sync_structures();
 }
 
 void VulkanEngine::render()
-{}
+{
+    auto val = m_device->waitForFences({*m_render_fence}, true, 1000000000);
+    m_device->resetFences({*m_render_fence});
+
+    auto swapchain_image_idx = m_device
+                                   ->acquireNextImageKHR(*m_swapchain.handle,
+                                                         1000000000,
+                                                         *m_present_semaphore,
+                                                         nullptr)
+                                   .value;
+
+    m_command_pool.command_buffer.reset();
+
+    auto& cmd = m_command_pool.command_buffer;
+
+    vk::CommandBufferBeginInfo cmd_begin_info{
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+    cmd.begin(cmd_begin_info);
+
+    float flash = std::abs(std::sin(m_frame_number / 120.0f));
+    vk::ClearValue colour_clear{.color = {std::array{0.0f, 0.0f, flash, 1.0f}}};
+
+    vk::RenderPassBeginInfo rp_info{
+        .renderPass  = *m_render_pass,
+        .framebuffer = *m_framebuffers[swapchain_image_idx],
+        .renderArea = vk::Rect2D{.offset = vk::Offset2D{0, 0}, .extent = m_window_extent},
+        .clearValueCount = 1,
+        .pClearValues    = &colour_clear
+    };
+
+    cmd.beginRenderPass(rp_info, vk::SubpassContents::eInline);
+
+    cmd.endRenderPass();
+    cmd.end();
+
+    vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    vk::SubmitInfo submit{.waitSemaphoreCount   = 1,
+                          .pWaitSemaphores      = &(*m_present_semaphore),
+                          .pWaitDstStageMask    = &wait_stage,
+                          .commandBufferCount   = 1,
+                          .pCommandBuffers      = &cmd,
+                          .signalSemaphoreCount = 1,
+                          .pSignalSemaphores    = &(*m_render_semaphore)};
+
+    m_graphics_queue.queue.submit(submit, *m_render_fence);
+
+    vk::PresentInfoKHR present_info{.waitSemaphoreCount = 1,
+                                    .pWaitSemaphores    = &(*m_render_semaphore),
+                                    .swapchainCount     = 1,
+                                    .pSwapchains        = &(*m_swapchain.handle),
+                                    .pImageIndices      = &swapchain_image_idx};
+
+    val = m_graphics_queue.queue.presentKHR(present_info);
+    ++m_frame_number;
+}
 
 void VulkanEngine::init_vulkan()
 {
@@ -133,4 +193,59 @@ void VulkanEngine::init_commands()
                                              1,
                                              vk::CommandBufferLevel::ePrimary))
             .front();
+}
+
+void VulkanEngine::init_default_render_pass()
+{
+    vk::AttachmentDescription colour_attachment{
+        .format         = m_swapchain.format,
+        .samples        = vk::SampleCountFlagBits::e1,
+        .loadOp         = vk::AttachmentLoadOp::eClear,
+        .storeOp        = vk::AttachmentStoreOp::eStore,
+        .stencilLoadOp  = vk::AttachmentLoadOp::eDontCare,
+        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+        .initialLayout  = vk::ImageLayout::eUndefined,
+        .finalLayout    = vk::ImageLayout::ePresentSrcKHR};
+
+    vk::AttachmentReference colour_attachment_ref{
+        .attachment = 0,
+        .layout     = vk::ImageLayout::eColorAttachmentOptimal};
+
+    vk::SubpassDescription subpass{.pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+                                   .colorAttachmentCount = 1,
+                                   .pColorAttachments    = &colour_attachment_ref};
+
+    vk::RenderPassCreateInfo render_pass_info{.attachmentCount = 1,
+                                              .pAttachments    = &colour_attachment,
+                                              .subpassCount    = 1,
+                                              .pSubpasses      = &subpass};
+
+    m_render_pass = m_device->createRenderPassUnique(render_pass_info);
+}
+
+void VulkanEngine::init_framebuffers()
+{
+    vk::FramebufferCreateInfo fb_info{.renderPass      = *m_render_pass,
+                                      .attachmentCount = 1,
+                                      .width           = m_window_extent.width,
+                                      .height          = m_window_extent.height,
+                                      .layers          = 1};
+
+    m_framebuffers.resize(m_swapchain.images.size());
+    for (int i{0}; auto& framebuffer : m_framebuffers)
+    {
+        fb_info.pAttachments = &(*m_swapchain.image_views[i]);
+        framebuffer          = m_device->createFramebufferUnique(fb_info);
+        ++i;
+    }
+}
+
+void VulkanEngine::init_sync_structures()
+{
+    vk::FenceCreateInfo fence_create_info{.flags = vk::FenceCreateFlagBits::eSignaled};
+    m_render_fence = m_device->createFenceUnique(fence_create_info);
+
+    vk::SemaphoreCreateInfo semaphore_info;
+    m_present_semaphore = m_device->createSemaphoreUnique(semaphore_info);
+    m_render_semaphore  = m_device->createSemaphoreUnique(semaphore_info);
 }
