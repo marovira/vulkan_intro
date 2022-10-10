@@ -39,3 +39,32 @@ target_compile_definitions(vulkan_intro PRIVATE -DNOMINMAX)
 file (GLOB_RECURSE PRECOMPILED_HEADER_FILES
     ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/cmake_pch.*)
 source_group("include\\pch" FILES ${PRECOMPILED_HEADER_FILES})
+
+# Tell VS to set the working directory to the output of the exe itself.
+if (MSVC)
+    set_target_properties(vulkan_intro PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY
+        $<TARGET_FILE_DIR:vulkan_intro>)
+endif()
+
+#================================
+# SPIR-V Generation
+#================================
+set(SPV_BUILD_ROOT "${CMAKE_CURRENT_BINARY_DIR}/spv")
+file(MAKE_DIRECTORY ${SPV_BUILD_ROOT})
+
+foreach(GLSL ${SHADER_LIST})
+    get_filename_component(FILE_NAME ${GLSL} NAME)
+    set(SPIRV "${SPV_BUILD_ROOT}/${FILE_NAME}.spv")
+    add_custom_command(
+        OUTPUT ${SPIRV}
+        COMMAND Vulkan::glslangValidator -V ${GLSL} -o ${SPIRV}
+        DEPENDS ${GLSL}
+        )
+    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
+endforeach()
+add_custom_target(compile_shaders DEPENDS ${SPIRV_BINARY_FILES})
+add_custom_command(TARGET compile_shaders POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${SPV_BUILD_ROOT}
+    $<TARGET_FILE_DIR:vulkan_intro>/spv
+    )
+add_dependencies(vulkan_intro compile_shaders)
