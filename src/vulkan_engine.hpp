@@ -57,8 +57,6 @@ private:
         vk::raii::CommandBuffers command_buffers{nullptr};
     };
 
-    using UniqueShaderModule = std::unique_ptr<vk::raii::ShaderModule>;
-
     void init_vulkan();
     void init_swapchain();
     void init_commands();
@@ -67,7 +65,7 @@ private:
     void init_sync_structures();
     void init_pipelines();
 
-    UniqueShaderModule load_shader_module(std::filesystem::path const& path);
+    vk::raii::ShaderModule load_shader_module(std::filesystem::path const& path);
 
     int m_frame_number{0};
     SurfaceCallback m_surface_callback;

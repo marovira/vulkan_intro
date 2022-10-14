@@ -338,12 +338,11 @@ void VulkanEngine::init_pipelines()
     PipelineBuilder pipeline_builder;
 
     pipeline_builder.shader_stages.push_back(
-        pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex,
-                                          *vert_module));
+        pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex, vert_module));
 
     pipeline_builder.shader_stages.push_back(
         pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment,
-                                          *frag_module));
+                                          frag_module));
 
     pipeline_builder.vertex_input_info = vertex_input_state_create_info();
     pipeline_builder.input_assembly =
@@ -369,13 +368,13 @@ void VulkanEngine::init_pipelines()
         pipeline_builder.build_pipeline(*m_device, to_vk_type(m_render_pass)));
 }
 
-VulkanEngine::UniqueShaderModule
-VulkanEngine::load_shader_module(std::filesystem::path const& path)
+vk::raii::ShaderModule VulkanEngine::load_shader_module(std::filesystem::path const& path)
 {
     std::ifstream stream{path, std::ios::ate | std::ios::binary};
     if (!stream.is_open())
     {
-        return {};
+        auto msg = fmt::format("error: unable to open file {}", path.string());
+        throw std::runtime_error{msg.c_str()};
     }
 
     std::size_t file_size = stream.tellg();
@@ -389,5 +388,5 @@ VulkanEngine::load_shader_module(std::filesystem::path const& path)
                                                buffer.size() * sizeof(std::uint32_t),
                                            .pCode = buffer.data()};
 
-    return std::make_unique<vk::raii::ShaderModule>(*m_device, create_info);
+    return vk::raii::ShaderModule{*m_device, create_info};
 }
