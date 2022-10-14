@@ -28,7 +28,7 @@ target_link_libraries(vulkan_intro PRIVATE
     zeus::zeus
     glm::glm
     glfw
-    ${TINYOBJLOADER_LIB}
+    assimp::assimp
     vk-bootstrap::vk-bootstrap
     VulkanMemoryAllocator
     )

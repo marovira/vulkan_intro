@@ -20,6 +20,6 @@ This is a (probably incomplete) list of dependencies, mostly for reference:
 | Zeus | Latest |
 | GLM | Latest |
 | GLFW3 | 3.3.6 |
-| TinyObjLoader | Latest |
+| Assimp | 5.2.5 |
 | Vulkan-bootstrap | Latest |
-| VMA | v3.0.1 |
+| VMA | 3.0.1 |

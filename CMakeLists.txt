@@ -25,8 +25,7 @@ find_package(Vulkan REQUIRED)
 find_package(zeus REQUIRED)
 find_package(glm REQUIRED)
 find_package(glfw3 REQUIRED)
-find_package(tinyobjloader REQUIRED)
-set(TINYOBJLOADER_LIB "tinyobjloader::tinyobjloader")
+find_package(assimp REQUIRED)
 
 # Vulkna-bootstrap and VMA don't have install logic, so we're going to pull them through
 # fetch content.
