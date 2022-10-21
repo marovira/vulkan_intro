@@ -71,4 +71,8 @@ add_custom_command(TARGET compile_shaders POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${SPV_BUILD_ROOT}
     $<TARGET_FILE_DIR:vulkan_intro>/spv
     )
+add_custom_command(TARGET vulkan_intro POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${VULKAN_INTRO_MODELS_ROOT}
+    $<TARGET_FILE_DIR:vulkan_intro>/models
+    )
 add_dependencies(vulkan_intro compile_shaders)
