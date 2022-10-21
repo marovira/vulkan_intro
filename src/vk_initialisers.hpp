@@ -25,7 +25,7 @@ namespace vk_initialisers
 
     vk::PipelineShaderStageCreateInfo
     pipeline_shader_stage_create_info(vk::ShaderStageFlagBits stage,
-                               vk::raii::ShaderModule const& shader_module);
+                                      vk::raii::ShaderModule const& shader_module);
     vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info();
 
     vk::PipelineInputAssemblyStateCreateInfo
@@ -39,5 +39,17 @@ namespace vk_initialisers
     vk::PipelineColorBlendAttachmentState colour_blend_attachment_state();
 
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info();
+
+    vk::ImageCreateInfo image_create_info(vk::Format format,
+                                          vk::ImageUsageFlags usage_flags,
+                                          vk::Extent3D extent);
+    vk::ImageViewCreateInfo image_view_create_info(vk::Format format,
+                                                   vk::Image image,
+                                                   vk::ImageAspectFlags aspect_flags);
+
+    vk::PipelineDepthStencilStateCreateInfo
+    depth_stencil_create_info(bool depth_test,
+                              bool depth_write,
+                              vk::CompareOp compare_op);
 
 } // namespace vk_initialisers

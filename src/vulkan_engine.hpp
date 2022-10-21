@@ -17,6 +17,7 @@ struct PipelineBuilder
     vk::PipelineRasterizationStateCreateInfo rasterizer;
     vk::PipelineColorBlendAttachmentState colour_blend_attachment;
     vk::PipelineMultisampleStateCreateInfo multisampling;
+    vk::PipelineDepthStencilStateCreateInfo depht_stencil;
     vk::PipelineLayout pipeline_layout;
 };
 
@@ -62,6 +63,10 @@ private:
         vk::Format format;
         std::vector<vk::Image> images;
         std::vector<UniqueImageView> image_views;
+
+        vk::Format depth_format;
+        vk_types::AllocatedImage depth_image;
+        UniqueImageView depth_image_view;
     };
 
     struct Queue
@@ -117,10 +122,10 @@ private:
     std::unique_ptr<vk::raii::Semaphore> m_render_semaphore;
     std::unique_ptr<vk::raii::Fence> m_render_fence;
 
-    std::unique_ptr<vk::raii::PipelineLayout> m_triangle_pipeline_layout;
-    std::unique_ptr<vk::raii::Pipeline> m_triangle_pipeline;
+    std::unique_ptr<vk::raii::PipelineLayout> m_mesh_pipeline_layout;
+    std::unique_ptr<vk::raii::Pipeline> m_mesh_pipeline;
 
     MemoryDeletionQueue m_deletion_queue;
     VmaAllocator m_allocator;
-    Mesh m_triangle_mesh;
+    Model m_model;
 };

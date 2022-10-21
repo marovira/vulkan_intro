@@ -7,4 +7,10 @@ namespace vk_types
         vk::Buffer buffer;
         VmaAllocation allocation;
     };
+
+    struct AllocatedImage
+    {
+        vk::Image image;
+        VmaAllocation allocation;
+    };
 } // namespace vk_types

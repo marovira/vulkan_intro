@@ -28,5 +28,20 @@ struct MeshPushConstants
 struct Mesh
 {
     std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
     vk_types::AllocatedBuffer vertex_buffer;
+    vk_types::AllocatedBuffer index_buffer;
+};
+
+class Model
+{
+public:
+    bool load_from_file(std::filesystem::path const& path);
+    bool load_from_file(std::string const& filename);
+
+    std::vector<Mesh> meshes;
+
+private:
+    void process_node(aiNode* node, aiScene const* scene);
+    Mesh process_mesh(aiMesh* mesh, aiScene const* scene);
 };
