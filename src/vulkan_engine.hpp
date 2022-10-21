@@ -1,9 +1,14 @@
 #pragma once
 
+#include "vk_mesh.hpp"
+
 using SurfaceCallback = std::function<VkSurfaceKHR(vk::Instance const&)>;
 
 struct PipelineBuilder
 {
+    vk::raii::Pipeline build_pipeline(vk::raii::Device const& device,
+                                      vk::RenderPass pass);
+
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
     vk::PipelineVertexInputStateCreateInfo vertex_input_info;
     vk::PipelineInputAssemblyStateCreateInfo input_assembly;
@@ -13,9 +18,26 @@ struct PipelineBuilder
     vk::PipelineColorBlendAttachmentState colour_blend_attachment;
     vk::PipelineMultisampleStateCreateInfo multisampling;
     vk::PipelineLayout pipeline_layout;
+};
 
-    vk::raii::Pipeline build_pipeline(vk::raii::Device const& device,
-                                      vk::RenderPass pass);
+struct MemoryDeletionQueue
+{
+
+    void push_function(std::function<void()>&& function)
+    {
+        deleters.push_back(function);
+    }
+
+    void flush()
+    {
+        while (!deleters.empty())
+        {
+            deleters.back()();
+            deleters.pop_back();
+        }
+    }
+
+    std::deque<std::function<void()>> deleters;
 };
 
 class VulkanEngine
@@ -65,6 +87,9 @@ private:
     void init_sync_structures();
     void init_pipelines();
 
+    void load_meshes();
+    void upload_mesh(Mesh& mesh);
+
     vk::raii::ShaderModule load_shader_module(std::filesystem::path const& path);
 
     int m_frame_number{0};
@@ -94,4 +119,8 @@ private:
 
     std::unique_ptr<vk::raii::PipelineLayout> m_triangle_pipeline_layout;
     std::unique_ptr<vk::raii::Pipeline> m_triangle_pipeline;
+
+    MemoryDeletionQueue m_deletion_queue;
+    VmaAllocator m_allocator;
+    Mesh m_triangle_mesh;
 };

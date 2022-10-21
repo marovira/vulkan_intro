@@ -8,6 +8,8 @@ set(SOURCE_LIST
     ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_app.cpp
     ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_engine.cpp
     ${VULKAN_INTRO_SOURCE_ROOT}/vk_initialisers.cpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vma.cpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vk_mesh.cpp
     )
 
 set(INCLUDE_LIST
@@ -15,11 +17,13 @@ set(INCLUDE_LIST
     ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_app.hpp
     ${VULKAN_INTRO_SOURCE_ROOT}/vulkan_engine.hpp
     ${VULKAN_INTRO_SOURCE_ROOT}/vk_initialisers.hpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vk_types.hpp
+    ${VULKAN_INTRO_SOURCE_ROOT}/vk_mesh.hpp
     )
 
 source_group("source" FILES ${SOURCE_LIST})
 source_group("include" FILES ${INCLUDE_LIST})
-source_group("shaders" FILES ${SHADER_LIST})
+source_group("shaders" FILES ${SHADER_LIST} ${SHADER_INCLUDE})
 
 add_executable(vulkan_intro ${SOURCE_LIST} ${INCLUDE_LIST} ${SHADER_LIST})
 target_precompile_headers(vulkan_intro PRIVATE ${PCH})

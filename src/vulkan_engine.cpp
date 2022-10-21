@@ -1,5 +1,6 @@
 #include "vulkan_engine.hpp"
 #include "vk_initialisers.hpp"
+#include "vk_types.hpp"
 
 #include <zeus/assert.hpp>
 
@@ -8,6 +9,13 @@ template<typename T>
 auto to_vk_type(T const& ptr)
 {
     return *(*ptr);
+}
+
+// Convert a vk:: type pointer to a pointer of the corresponding vk type (C-version)
+template<typename T>
+auto to_vkc_ptr(T* ptr)
+{
+    return reinterpret_cast<T::NativeType*>(ptr);
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -66,6 +74,10 @@ VulkanEngine::~VulkanEngine()
 {
     [[maybe_unused]] auto val =
         m_device->waitForFences({to_vk_type(m_render_fence)}, true, 1000000000);
+
+    m_deletion_queue.flush();
+
+    vmaDestroyAllocator(m_allocator);
 }
 
 void VulkanEngine::set_surface_callback(SurfaceCallback&& callback)
@@ -87,6 +99,8 @@ void VulkanEngine::init()
     init_framebuffers();
     init_sync_structures();
     init_pipelines();
+
+    load_meshes();
 }
 
 void VulkanEngine::render()
@@ -126,7 +140,30 @@ void VulkanEngine::render()
     cmd.beginRenderPass(rp_info, vk::SubpassContents::eInline);
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, to_vk_type(m_triangle_pipeline));
-    cmd.draw(3, 1, 0, 0);
+
+    vk::DeviceSize offset = 0;
+    cmd.bindVertexBuffers(0, {m_triangle_mesh.vertex_buffer.buffer}, {offset});
+
+    glm::vec3 cam_pos    = {0.0f, 0.0f, -2.0f};
+    glm::mat4 view       = glm::translate(glm::mat4(1.0f), cam_pos);
+    glm::mat4 projection = glm::perspective(glm::radians(70.0f),
+                                            static_cast<float>(m_window_extent.width)
+                                                / m_window_extent.height,
+                                            0.1f,
+                                            200.0f);
+    projection[1][1] *= -1;
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f),
+                                  glm::radians(m_frame_number * 0.4f),
+                                  glm::vec3(0, 1, 0));
+
+    MeshPushConstants constants;
+    constants.mvp = projection * view * model;
+
+    cmd.pushConstants<MeshPushConstants>(to_vk_type(m_triangle_pipeline_layout),
+                                         vk::ShaderStageFlagBits::eVertex,
+                                         0,
+                                         {constants});
+    cmd.draw(static_cast<std::uint32_t>(m_triangle_mesh.vertices.size()), 1, 0, 0);
 
     cmd.endRenderPass();
     cmd.end();
@@ -207,6 +244,15 @@ void VulkanEngine::init_vulkan()
     m_graphics_queue.queue = vkb_device.get_queue(vkb::QueueType::graphics).value();
     m_graphics_queue.family_index =
         vkb_device.get_queue_index(vkb::QueueType::graphics).value();
+
+    VmaAllocatorCreateInfo alloc_info = {};
+    alloc_info.physicalDevice         = m_chosen_gpu;
+    alloc_info.device                 = to_vk_type(m_device);
+    alloc_info.instance               = instance;
+    if (vmaCreateAllocator(&alloc_info, &m_allocator) != VK_SUCCESS)
+    {
+        throw std::runtime_error{"error: unable to initialise VMA"};
+    }
 }
 
 void VulkanEngine::init_swapchain()
@@ -332,6 +378,16 @@ void VulkanEngine::init_pipelines()
     auto frag_module = load_shader_module(shader_root / "triangle.frag.spv");
 
     auto pipeline_layout_info = pipeline_layout_create_info();
+
+    vk::PushConstantRange push_constants{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .offset     = 0,
+        .size       = sizeof(MeshPushConstants),
+    };
+
+    pipeline_layout_info.pPushConstantRanges    = &push_constants;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+
     m_triangle_pipeline_layout =
         std::make_unique<vk::raii::PipelineLayout>(*m_device, pipeline_layout_info);
 
@@ -344,7 +400,19 @@ void VulkanEngine::init_pipelines()
         pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment,
                                           frag_module));
 
+    VertexInputDescription vertex_description = Vertex::get_vertex_description();
+
     pipeline_builder.vertex_input_info = vertex_input_state_create_info();
+    pipeline_builder.vertex_input_info.vertexAttributeDescriptionCount =
+        static_cast<std::uint32_t>(vertex_description.attributes.size());
+    pipeline_builder.vertex_input_info.pVertexAttributeDescriptions =
+        vertex_description.attributes.data();
+
+    pipeline_builder.vertex_input_info.vertexBindingDescriptionCount =
+        static_cast<std::uint32_t>(vertex_description.bindings.size());
+    pipeline_builder.vertex_input_info.pVertexBindingDescriptions =
+        vertex_description.bindings.data();
+
     pipeline_builder.input_assembly =
         input_assembly_create_info(vk::PrimitiveTopology::eTriangleList);
 
@@ -389,4 +457,54 @@ vk::raii::ShaderModule VulkanEngine::load_shader_module(std::filesystem::path co
                                            .pCode = buffer.data()};
 
     return vk::raii::ShaderModule{*m_device, create_info};
+}
+
+void VulkanEngine::load_meshes()
+{
+    auto& [vertices, vertex_buffer] = m_triangle_mesh;
+    vertices.resize(3);
+
+    vertices[0].position = {1.0f, 1.0f, 0.0f};
+    vertices[1].position = {-1.0f, 1.0f, 0.0f};
+    vertices[2].position = {0.0f, -1.0f, 0.0f};
+
+    vertices[0].colour = {1, 0, 0};
+    vertices[1].colour = {0, 1, 0};
+    vertices[2].colour = {0, 0, 1};
+
+    upload_mesh(m_triangle_mesh);
+}
+
+void VulkanEngine::upload_mesh(Mesh& mesh)
+{
+    vk::BufferCreateInfo buffer_info{
+        .size  = mesh.vertices.size() * sizeof(Vertex),
+        .usage = vk::BufferUsageFlagBits::eVertexBuffer,
+    };
+
+    VmaAllocationCreateInfo alloc_info = {};
+    alloc_info.usage                   = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    if (vmaCreateBuffer(m_allocator,
+                        to_vkc_ptr(&buffer_info),
+                        &alloc_info,
+                        to_vkc_ptr(&mesh.vertex_buffer.buffer),
+                        &mesh.vertex_buffer.allocation,
+                        nullptr)
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error{"error: unable to allocate vertex buffer"};
+    }
+
+    m_deletion_queue.push_function([this, mesh]() {
+        vmaDestroyBuffer(m_allocator,
+                         mesh.vertex_buffer.buffer,
+                         mesh.vertex_buffer.allocation);
+    });
+
+    {
+        void* data{nullptr};
+        vmaMapMemory(m_allocator, mesh.vertex_buffer.allocation, &data);
+        std::memcpy(data, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+        vmaUnmapMemory(m_allocator, mesh.vertex_buffer.allocation);
+    }
 }
